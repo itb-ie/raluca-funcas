@@ -9,6 +9,7 @@ import log_config
 
 logger = log_config.setup_logger(__name__, logging.DEBUG)
 
+
 class PdfProcessor:
     """
     My class that processes multiple column PDF files and extract the text per paragraph
@@ -17,11 +18,13 @@ class PdfProcessor:
     CUTOFF_X = 14
     CUTOFF_Y = 4
     CUTOFF_COL = 14
-    PUNCTUATION = ".!?"
+    PUNCTUATION = ".!?\""
 
     def __init__(self, filename: str):
         self.extracted_text = ""
         self.filename = filename
+        self.paragraphs = []
+        self.previous_page_paragraphs = []
         if not os.path.exists(filename):
             logger.error(f"Invalid file path {filename}")
             raise Exception("File not found")
@@ -70,7 +73,7 @@ class PdfProcessor:
                             # it is a new column, add it
                             # if it is before existing columns, re-order them
                             idx = len(columns) - 1  # Default index if no reordering is needed
-                            for i, column in enumerate(columns[:-1]):
+                            for i, column in enumerate(columns):
                                 if word['x0'] < column[0]['x0']:
                                     columns.insert(i, [])
                                     idx = i
@@ -99,7 +102,7 @@ class PdfProcessor:
                 prev_word = (word, idx)
             return columns
 
-        def extract_paragraphs(columns: List[Dict]) -> List[Dict]:
+        def extract_paragraphs(columns: List[Dict]) -> List[List]:
             """
             Helper function that puts the words in columns into paragraphs
             :param columns: the list of columns that was determined before
@@ -120,34 +123,62 @@ class PdfProcessor:
             # check if there is a potential multi-column paragraph
             for p in paragraphs:
                 if p[0]['text'].islower():
-                    logger.debug(f"Found potential multi-column paragraph starting with {p[0]['text']}")
-                    for parent in paragraphs:
-                        if parent == p:
-                            logger.debug("Was not able the identify the parent of this paragraph")
+                    logger.debug(f"Found potential multi-column paragraph starting with: '{p[0]['text']}'")
+                    prev_paragraphs = []
+                    for pre in paragraphs:
+                        if pre == p:
                             break
-                        if len(parent) > 20 and parent[-1]['text'][-1] not in PdfProcessor.PUNCTUATION:
+                        prev_paragraphs.append(pre)
+                    prev_paragraphs = prev_paragraphs[::-1]
+                    for parent in prev_paragraphs:
+                        if len(parent) > 10 and parent[-1]['text'][-1] not in PdfProcessor.PUNCTUATION and \
+                                parent[-1]["bottom"] - parent[-1]["top"] == p[0]["bottom"] - p[0]["top"]:
                             logger.debug(f"Found potential parent paragraph: {' '.join([w['text'] for w in parent])}")
-
                             parent.extend(p)
                             paragraphs.remove(p)
                             break
+                    else:
+                        for prev_p in self.previous_page_paragraphs[::-1]:
+                            if len(prev_p) > 10 and prev_p[-1]['text'][-1] not in PdfProcessor.PUNCTUATION and \
+                                    prev_p[-1]["bottom"] - prev_p[-1]["top"] == p[0]["bottom"] - p[0]["top"]:
+                                logger.debug(
+                                    f"Found potential parent paragraph on previous page: {' '.join([w['text'] for w in prev_p])}")
+                                prev_p.extend(p)
+                                paragraphs.remove(p)
+                                break
+                        else:
+                            logger.debug("Was not able the identify the parent of this paragraph")
             return paragraphs
-
-        def paragraphs_to_text(paragraphs: List[Dict]):
-            """
-            Convert the list of Word paragraphs into plain text
-            :param paragraphs: The list of paragraphs containing words
-            """
-            # convert the paragraphs into text paragraphs
-            self.extracted_text += f"\n=={str(page)}==\n\n"
-            for p in paragraphs:
-                words = [w["text"] for w in p]
-                paragaph_text = " ".join(words) + "\n"
-                self.extracted_text += paragaph_text
 
         logger.info(f"Processing page {str(page)} from {self.filename}")
         # Extract text from the current page
         words = page.extract_words()
         columns = extract_columns(words)
-        paragraphs = extract_paragraphs(columns)
-        paragraphs_to_text(paragraphs)
+        if self.paragraphs:
+            self.previous_page_paragraphs = self.paragraphs[-1]
+        self.paragraphs.append([])
+        self.paragraphs[-1] = extract_paragraphs(columns)
+        # paragraphs_to_text(self.paragraphs)
+
+    def paragraphs_to_text(self):
+        """
+        Convert the list of Word paragraphs into plain text
+        """
+        # convert the paragraphs into text paragraphs
+        for idx, page_para in enumerate(self.paragraphs):
+            self.extracted_text += f"\n==Page{idx+1}==\n\n"
+            for p in page_para:
+                words = [w["text"] for w in p]
+                paragraph_text = " ".join(words) + "\n"
+                self.extracted_text += paragraph_text
+
+    def process_file(self):
+        """
+        Decodes the entire pdf file and saves the result
+        """
+        for page in self.pages:
+            self.process_page(page)
+        self.paragraphs_to_text()
+
+        with open(f"{self.filename.replace('pdf', 'txt')}", "w", encoding="utf-8") as f:
+            f.write(self.extracted_text)
