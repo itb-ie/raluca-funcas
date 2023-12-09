@@ -2,17 +2,10 @@ import os
 import pdfplumber
 import logging
 from pdf_processor import PdfProcessor
+import log_config
 
+logger = log_config.setup_logger(__name__, logging.DEBUG)
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(levelname)s - %(asctime)s - %(message)s',
-                    datefmt='%A %H:%M:%S')
-
-logger = logging.getLogger()
-
-cutoff_x = 20 # play with this value, it was 7 before
-cutoff_col = 4
-cutoff_y = 4
 
 pdf_file_path = 'REP-2022.pdf'
 word_to_search = "diversity"
@@ -21,9 +14,13 @@ word_to_search = "diversity"
 
 if __name__ == '__main__':
     proc = PdfProcessor("pdfs/REP-2022.pdf")
+    for page in proc.pages[20:40]:
+        proc.process_page(page)
+
+    with open(f"pdfs/{pdf_file_path.replace('pdf', 'txt')}", "w", encoding="utf-8") as f:
+        f.write(proc.extracted_text)
 
     exit()
-    # Create a pdfplumber.PDF object
 
     # Replace this condition to not extract all the time:
     # if not os.path.exists(f"pdfs/{pdf_file_path.replace('pdf', 'txt')}"):
