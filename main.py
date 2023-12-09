@@ -1,5 +1,14 @@
 import os
 import pdfplumber
+import logging
+from pdf_processor import PdfProcessor
+
+
+logging.basicConfig(level=logging.INFO,
+                    format='%(levelname)s - %(asctime)s - %(message)s',
+                    datefmt='%A %H:%M:%S')
+
+logger = logging.getLogger()
 
 cutoff_x = 20 # play with this value, it was 7 before
 cutoff_col = 4
@@ -8,20 +17,26 @@ cutoff_y = 4
 pdf_file_path = 'REP-2022.pdf'
 word_to_search = "diversity"
 
+
+
 if __name__ == '__main__':
+    proc = PdfProcessor("pdfs/REP-2022.pdf")
+
+    exit()
     # Create a pdfplumber.PDF object
 
     # Replace this condition to not extract all the time:
     # if not os.path.exists(f"pdfs/{pdf_file_path.replace('pdf', 'txt')}"):
     if 1:
-
+        extracted_text = ""
         pdf = pdfplumber.open(f"pdfs/{pdf_file_path}")
+        logger.info(f"Processing file {pdf_file_path} with {len(pdf.pages)} pages")
 
-        # Initialize an empty string to store the extracted text
-        extracted_text = ''
-        paragraphs = []
         # Iterate through each page in the PDF
-        for page in [pdf.pages[10]]:
+        for page in pdf.pages:
+            logger.info(f"Processing page {str(page)}")
+            # Initialize an empty string to store the extracted text
+            paragraphs = []
             # Extract text from the current page
             page_text = page.extract_text()
             words = page.extract_words()
@@ -40,26 +55,26 @@ if __name__ == '__main__':
                         idx = prev_word[1]
                     else:
                         # we are starting from a new line, need to determine the column:
-                            for i, c in enumerate(columns):
-                                if not c:
-                                    continue
-                                if abs(word['x0'] - c[0]['x0']) < cutoff_col:
+                        for i, c in enumerate(columns):
+                            if not c:
+                                continue
+                            if abs(word['x0'] - c[0]['x0']) < cutoff_col:
+                                idx = i
+                                break
+                        else:
+                            # it is a new column, add it
+                            columns.append([])
+                            # if it is before existing columns, re-order them
+                            for i, c in enumerate(columns[:-1]):
+
+                                if word['x0'] < columns[i][0]['x0']:
+                                    for cindex in range(len(columns) - 1, i, -1):
+                                        columns[cindex] = columns[cindex-1]
+                                    columns[i] = []
                                     idx = i
                                     break
                             else:
-                                # it is a new column, add it
-                                columns.append([])
-                                # if it is before existing columns, re-order them
-                                for i, c in enumerate(columns[:-1]):
-
-                                    if word['x0'] < columns[i][0]['x0']:
-                                        for cindex in range(len(columns) - 1, i, -1):
-                                            columns[cindex] = columns[cindex-1]
-                                        columns[i] = []
-                                        idx = i
-                                        break
-                                else:
-                                    idx = len(columns) - 1
+                                idx = len(columns) - 1
 
                     columns[idx].append(word)
                 else:
@@ -71,18 +86,20 @@ if __name__ == '__main__':
                             idx = cindex
                             break
                     else:
-                        idx = prev_word[1] + 1
                         columns.append([])
-                        if len(columns) - 1 > idx:
-                            # we added a column in the middle, need to reshuffle
-                            for cindex in range(len(columns) - 1, idx, -1):
+                        idx = 0
+                        # we added a column in the middle, need to reshuffle
+                        for cindex in range(len(columns) - 1, -1, -1):
+                            if columns[cindex-1][0]['x0'] > word['x0']:
                                 columns[cindex] = columns[cindex - 1]
-                            columns[idx] = []
+                            else:
+                                idx = cindex
+                                break
+                        columns[idx] = []
                     columns[idx].append(word)
                 prev_word = (word, idx)
 
-            # decode paragraphs
-
+            # decode columns to paragraphs
             for column in columns:
                 if not column:
                     continue
@@ -93,7 +110,12 @@ if __name__ == '__main__':
                         paragraphs.append([])
                     paragraphs[-1].append(word)
 
-            extracted_text += page_text
+            # convert the paragraphs into text paragraphs
+            extracted_text += f"\n=={str(page)}==\n\n"
+            for p in paragraphs:
+                words = [w["text"] for w in p]
+                paragaph_text = " ".join(words) + "\n"
+                extracted_text += paragaph_text
 
         # Close the PDF file
         pdf.close()
