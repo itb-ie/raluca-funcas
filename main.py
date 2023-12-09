@@ -1,6 +1,7 @@
 import os
 import logging
 from pdf_processor import PdfProcessor
+from graph_generator import GenerateGraphs
 import log_config
 
 logger = log_config.setup_logger(__name__, logging.DEBUG)
@@ -27,7 +28,12 @@ def check_and_decode_new_files():
             proc = PdfProcessor(pdf)
             proc.process_file()
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
+    logger.info("Attempting to find and decode new files (if any)")
     check_and_decode_new_files()
-    exit()
+
+    logger.info("Generating the graphs per company")
+    graphs = GenerateGraphs(pdf_dir)
+    for company in graphs.companies:
+        graphs.generate_csvs_for_company(company)
