@@ -36,4 +36,4 @@ if __name__ == '__main__':
     logger.info("Generating the graphs per company")
     graphs = GenerateGraphs(pdf_dir)
     for company in graphs.companies:
-        graphs.generate_csvs_for_company(company)
+        graphs.analyse_and_plot_data_for_company(company, force_generate=True)
