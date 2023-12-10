@@ -7,12 +7,57 @@ import os
 import log_config
 import pandas as pd
 import matplotlib.pyplot as plt
+from docx import Document
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 
 logger = log_config.setup_logger(__name__, logging.DEBUG)
 
 
+class HandleDocument:
+    """
+    Class that handles the creation of the doc files, based on the CSV and JPG files
+    """
+
+    @staticmethod
+    def add_csv_to_doc(filename: str, document: Document):
+        """
+        Add the CSV file contents to the document
+        :param filename: The name of the CSV file
+        :param document: The document object
+        """
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv(filename)
+        # Add the DataFrame as a table to the document
+        table = document.add_table(rows=1, cols=len(df.columns))
+        hdr_cells = table.rows[0].cells
+        # Add header row
+        for i, column_name in enumerate(df.columns):
+            if i == 0:
+                hdr_cells[i].text = 'Year'
+            else:
+                hdr_cells[i].text = str(column_name)
+        # Add the rest of the data frame
+        for index, row in df.iterrows():
+            row_cells = table.add_row().cells
+            for i, value in enumerate(row):
+                row_cells[i].text = str(value)
+
+    @staticmethod
+    def add_jpg_to_doc(filename, document):
+        """
+        Add the JPG file contents to the document
+        :param filename: The name of the JPG file
+        :param document: The document object
+        """
+        # Add the JPG file to the document
+        document.add_picture(filename, width=Inches(8))  # You can adjust the width
+
+
 class GenerateGraphs:
     CSV_DIR = "csvs"
+    DOCS_DIR = "docs"
     YEARS = list(range(2012, 2023))
     DATAFRAME_COLUMNS = {
         "gender": ["Gender", "Gender/Woman Board", "Gender/Woman Executive"],
@@ -85,7 +130,8 @@ class GenerateGraphs:
                             if main_pattern.search(paragraph) and board_pattern.search(paragraph):
                                 value += 1
                         else:
-                            if (main_pattern.search(paragraph) or secondary_pattern.search(paragraph)) and board_pattern.search(paragraph):
+                            if (main_pattern.search(paragraph) or secondary_pattern.search(
+                                    paragraph)) and board_pattern.search(paragraph):
                                 value += 1
                     elif idx == 2:
                         # third column, if secondary pattern is None, then just a simple count for the main + executive pattern
@@ -94,7 +140,8 @@ class GenerateGraphs:
                             if main_pattern.search(paragraph) and executive_pattern.search(paragraph):
                                 value += 1
                         else:
-                            if (main_pattern.search(paragraph) or secondary_pattern.search(paragraph)) and executive_pattern.search(paragraph):
+                            if (main_pattern.search(paragraph) or secondary_pattern.search(
+                                    paragraph)) and executive_pattern.search(paragraph):
                                 value += 1
                 values.append(value)
 
@@ -164,6 +211,50 @@ class GenerateGraphs:
             # Save the figure
             plt.savefig(f"{self.CSV_DIR}/{file.split('.csv')[0]}_graph.jpg")
 
+    def generate_doc(self, company_name):
+        """"
+        Generates the doc files for the company that includes the graphs and the csv data into a single doc
+        :param company_name: The name of the company
+        """
+        logger.info(f"Generating the doc file for company {company_name}")
+        if not os.path.exists(f"{self.DOCS_DIR}"):
+            logger.error(f"The directory {self.DOCS_DIR} does not exist, creating it")
+            os.mkdir(self.DOCS_DIR)
+
+        files = os.listdir(self.CSV_DIR)
+        csv_files = [f for f in files if f.endswith("csv") and company_name in f]
+        jpg_files = [f for f in files if f.endswith("jpg") and company_name in f]
+
+        # Create a new Document
+        doc = Document()
+        title = doc.add_heading(f'{company_name} Results and Graphs', 0)
+        for run in title.runs:
+            run.font.bold = True
+            run.font.size = Pt(26)  # Optional: Adjust the font size if needed
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph("")
+
+        paragraph = doc.add_paragraph(
+            f'The following graphs and data are based on collected data from the PDF files for the company: '
+            f'{company_name.upper()}')
+        paragraph.style.font.size = Pt(14)
+
+        doc.add_paragraph("")
+
+        for csv_file, jpg_file in zip(csv_files, jpg_files):
+            # Add CSV and JPG files to the document
+            pattern = csv_file.split("-")[0].upper()
+            doc.add_heading(f'{pattern} COLLECTED DATA TABLE:', level=1)
+            HandleDocument.add_csv_to_doc(f"{self.CSV_DIR}/{csv_file}", doc)
+            doc.add_heading(f'{pattern} GRAPH:', level=1)
+            HandleDocument.add_jpg_to_doc(f"{self.CSV_DIR}/{jpg_file}", doc)
+            doc.add_page_break()  # Add a page break after each CSV/jpg content
+
+        # Save the document
+        doc.save(f'{self.DOCS_DIR}/{company_name}.docx')
+        logger.info(f'The Word document has been created with the CSV and JPG files for {company_name}.')
+
     def analyse_and_plot_data_for_company(self, company_name: str, force_generate: bool = False):
         """
         Main function in the class, that does the following:
@@ -181,4 +272,29 @@ class GenerateGraphs:
             logger.info(f"The CSV data for company {company_name} is already generated")
 
         self.generate_graphs(company_name)
+        self.generate_doc(company_name)
 
+
+if __name__ == '__main__':
+
+    # testing out the creation of the doc file
+    doc = Document()
+
+    csv_files = os.listdir("csvs")
+    csv_files = [f"csvs/{f}" for f in csv_files if f.endswith("csv")]
+    jpg_files = os.listdir("csvs")
+    jpg_files = [f"csvs/{f}" for f in jpg_files if f.endswith("jpg")]
+
+    # Add CSV and JPG files to the document
+    for csv_file in csv_files:
+        HandleDocument.add_csv_to_doc(csv_file, doc)
+        doc.add_page_break()  # Add a page break after each CSV content
+
+    for jpg_file in jpg_files:
+        HandleDocument.add_jpg_to_doc(jpg_file, doc)
+        doc.add_page_break()  # Add a page break after each image
+
+    # Save the document
+    doc.save('Report.docx')
+
+    print('The Word document has been created with the CSV and JPG files.')
