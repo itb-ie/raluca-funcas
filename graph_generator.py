@@ -166,12 +166,19 @@ class GenerateGraphs:
             self.dfs[df_id].loc[year] = values
         return
 
-    def generate_csvs_for_company(self, company_name: str):
+    def generate_csvs_for_company(self, company_name: str, force_generate: bool = False):
         """
         Generates the CSV files for the company, based on the self.REGEX_PATTERNS and saves them in the CSV_DIR
         :param company_name: The name of the company
+        :param force_generate: bool, set to True to generate the CSV even is found
         :return:
         """
+        company_csvs = os.listdir(self.CSV_DIR)
+        company_csvs = [f for f in company_csvs if f.endswith("csv") and company_name in f]
+        if not force_generate and len(company_csvs) == len(self.DATAFRAME_COLUMNS):
+            logger.info(f"The CSV files for company {company_name} are already generated")
+            return
+        logger.info(f"Generating CSV files for company {company_name}")
         company_files = [f for f in self.files if company_name in f]
         for year in self.YEARS:
             for file in company_files:
@@ -188,14 +195,21 @@ class GenerateGraphs:
             if company_name in df_id:
                 self.dfs[df_id].to_csv(f"{self.CSV_DIR}/{df_id}.csv")
 
-    def generate_graphs(self, company_name: str):
+    def generate_graphs(self, company_name: str, force_generate: bool = False):
         """
         Generates the graph for the company
         :param company_name: The name of the company
+        :param force_generate: bool, set to True to generate the CSV even is found
         """
         files = os.listdir(self.CSV_DIR)
         files = [f for f in files if f.endswith("csv") and company_name in f]
+
         for file in files:
+            if os.path.exists(f"{self.CSV_DIR}/{file.split('.csv')[0]}_graph.jpg") and not force_generate:
+                logger.info(f"The graph for company {company_name} based on CSV file {file} is already generated")
+                continue
+            logger.info(f"Generating graph for company {company_name} based on CSV file {file}")
+            # Read the CSV file into a DataFrame
             df = pd.read_csv(f"{self.CSV_DIR}/{file}", index_col=0)
             # Plotting the graph
             plt.figure(figsize=(10, 6))  # You can change the figure size as needed
@@ -210,20 +224,28 @@ class GenerateGraphs:
             plt.grid(True)
             # Save the figure
             plt.savefig(f"{self.CSV_DIR}/{file.split('.csv')[0]}_graph.jpg")
+            # Close the figure to prevent the warning
+            plt.close()
 
-    def generate_doc(self, company_name):
+    def generate_doc(self, company_name: str, force_generate: bool = False):
         """"
         Generates the doc files for the company that includes the graphs and the csv data into a single doc
         :param company_name: The name of the company
+        :param force_generate: bool, set to True to generate the CSV even is found
         """
         logger.info(f"Generating the doc file for company {company_name}")
         if not os.path.exists(f"{self.DOCS_DIR}"):
             logger.error(f"The directory {self.DOCS_DIR} does not exist, creating it")
             os.mkdir(self.DOCS_DIR)
 
+        if not force_generate and os.path.exists(f"{self.DOCS_DIR}/{company_name}.docx"):
+            logger.info(f"The doc file for company {company_name} is already generated")
+            return
         files = os.listdir(self.CSV_DIR)
         csv_files = [f for f in files if f.endswith("csv") and company_name in f]
         jpg_files = [f for f in files if f.endswith("jpg") and company_name in f]
+        csv_files.sort()
+        jpg_files.sort()
 
         # Create a new Document
         doc = Document()
@@ -265,14 +287,33 @@ class GenerateGraphs:
         :param company_name: String identifing the company, same as in the PDF file, REP for Reposol
         :param force_generate: bool, set to True to generate the CSV even is found
         """
-        if not os.path.exists(f"{self.CSV_DIR}/{company_name}.csv") or force_generate:
-            logger.info(f"Generating based on txt files for company {company_name}")
-            self.generate_csvs_for_company(company_name)
-        else:
-            logger.info(f"The CSV data for company {company_name} is already generated")
+        logger.info(f"Analysing and plotting data for company {company_name}")
+        self.generate_csvs_for_company(company_name, force_generate)
+        self.generate_graphs(company_name, force_generate)
+        self.generate_doc(company_name, force_generate)
 
-        self.generate_graphs(company_name)
-        self.generate_doc(company_name)
+    def generate_aggregated_doc(self):
+        """
+        Go over all the companies and generate an aggregated doc file with a table and graph adding the existing csvs
+        """
+        logger.info(f"Generating the aggregated doc file")
+        # create csv files for each of the dataframes
+        for key in self.DATAFRAME_COLUMNS:
+            df_id = f"{key}-all"
+            if df_id not in self.dfs:
+                self.dfs[df_id] = pd.DataFrame(columns=self.DATAFRAME_COLUMNS[key], index=self.YEARS)
+                # set it all to zeroes
+                for year in self.YEARS:
+                    self.dfs[df_id].loc[year] = 0
+            for company in self.companies:
+                company_df = pd.read_csv(f"{self.CSV_DIR}/{key}-{company}.csv", index_col=0)
+                # sum the values for each year
+                for year in self.YEARS:
+                    self.dfs[df_id].loc[year] += company_df.loc[year]
+            # generate the csv file
+            self.dfs[df_id].to_csv(f"{self.CSV_DIR}/{df_id}.csv")
+        self.generate_graphs("all")
+        self.generate_doc("all")
 
 
 if __name__ == '__main__':

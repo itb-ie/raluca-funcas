@@ -7,17 +7,24 @@ import logging
 import os
 import log_config
 
-logger = log_config.setup_logger(__name__, logging.DEBUG)
+logger = log_config.setup_logger(__name__, logging.WARNING)
+
+CUTOFFS = {
+    "REP": {"CUTOFF_X": 14, "CUTOFF_Y": 4, "CUTOFF_COL": 14},
+    "MTS": {"CUTOFF_X": 5, "CUTOFF_Y": 7, "CUTOFF_COL": 5},
+    "ABE": {"CUTOFF_X": 14, "CUTOFF_Y": 4, "CUTOFF_COL": 14},
+    "ANA": {"CUTOFF_X": 14, "CUTOFF_Y": 4, "CUTOFF_COL": 14},
+    "ANE": {"CUTOFF_X": 14, "CUTOFF_Y": 4, "CUTOFF_COL": 14},
+    "AMS": {"CUTOFF_X": 14, "CUTOFF_Y": 4, "CUTOFF_COL": 14},
+    "BBVA": {"CUTOFF_X": 14, "CUTOFF_Y": 7, "CUTOFF_COL": 14},
+    "default": {"CUTOFF_X": 14, "CUTOFF_Y": 5, "CUTOFF_COL": 14},
+}
 
 
 class PdfProcessor:
     """
     My class that processes multiple column PDF files and extract the text per paragraph
     """
-    # play with these values
-    CUTOFF_X = 14
-    CUTOFF_Y = 4
-    CUTOFF_COL = 14
     PUNCTUATION = ".!?\""
 
     def __init__(self, filename: str):
@@ -36,6 +43,15 @@ class PdfProcessor:
             raise e
         else:
             self.pages = self.plumber.pages
+        dict_key = filename.split("/")[-1].split("-")[0]
+        if dict_key in CUTOFFS:
+            self.CUTOFF_X = CUTOFFS[dict_key]["CUTOFF_X"]
+            self.CUTOFF_Y = CUTOFFS[dict_key]["CUTOFF_Y"]
+            self.CUTOFF_COL = CUTOFFS[dict_key]["CUTOFF_COL"]
+        else:
+            self.CUTOFF_X = CUTOFFS["default"]["CUTOFF_X"]
+            self.CUTOFF_Y = CUTOFFS["default"]["CUTOFF_Y"]
+            self.CUTOFF_COL = CUTOFFS["default"]["CUTOFF_COL"]
 
     def process_page(self, page: Page):
         """
@@ -57,7 +73,7 @@ class PdfProcessor:
             for word in words:
                 # if word['text'] == 'prices':
                 #     print("stay")
-                if word['x0'] - prev_word[0]['x1'] < PdfProcessor.CUTOFF_X:
+                if word['x0'] - prev_word[0]['x1'] < self.CUTOFF_X:
                     # determine the column index of this word:
                     if word['x0'] - prev_word[0]['x1'] > 0:
                         idx = prev_word[1]
@@ -66,7 +82,7 @@ class PdfProcessor:
                         for i, c in enumerate(columns):
                             if not c:
                                 continue
-                            if abs(word['x0'] - c[0]['x0']) < PdfProcessor.CUTOFF_COL:
+                            if abs(word['x0'] - c[0]['x0']) < self.CUTOFF_COL:
                                 idx = i
                                 break
                         else:
@@ -84,7 +100,7 @@ class PdfProcessor:
                     for cindex, c in enumerate(columns):
                         if cindex < prev_word[1]:
                             continue
-                        if abs(word['x0'] - c[0]['x0']) < PdfProcessor.CUTOFF_COL:
+                        if abs(word['x0'] - c[0]['x0']) < self.CUTOFF_COL:
                             idx = cindex
                             break
                     else:
@@ -115,7 +131,7 @@ class PdfProcessor:
                     continue
                 paragraphs.append([])
                 for word in column:
-                    if paragraphs[-1] and word["top"] - paragraphs[-1][-1]["bottom"] > PdfProcessor.CUTOFF_Y:
+                    if paragraphs[-1] and word["top"] - paragraphs[-1][-1]["bottom"] > self.CUTOFF_Y:
                         # need to add a new paragraph
                         paragraphs.append([])
                     paragraphs[-1].append(word)
@@ -132,7 +148,7 @@ class PdfProcessor:
                     prev_paragraphs = prev_paragraphs[::-1]
                     for parent in prev_paragraphs:
                         if len(parent) > 10 and parent[-1]['text'][-1] not in PdfProcessor.PUNCTUATION and \
-                                parent[-1]["bottom"] - parent[-1]["top"] == p[0]["bottom"] - p[0]["top"]:
+                                abs((parent[-1]["bottom"] - parent[-1]["top"]) - (p[0]["bottom"] - p[0]["top"])) < 0.1:
                             logger.debug(f"Found potential parent paragraph: {' '.join([w['text'] for w in parent])}")
                             parent.extend(p)
                             paragraphs.remove(p)

@@ -36,4 +36,6 @@ if __name__ == '__main__':
     logger.info("Generating the graphs per company")
     graphs = GenerateGraphs(pdf_dir)
     for company in graphs.companies:
-        graphs.analyse_and_plot_data_for_company(company, force_generate=True)
+        graphs.analyse_and_plot_data_for_company(company, force_generate=False)
+    # in the end need to generate the aggregated doc with all the companies
+    graphs.generate_aggregated_doc()
